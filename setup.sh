@@ -10,7 +10,7 @@ set -euo pipefail
 ### ───────────────────────────────────────────────────────────
 
 # 1) Detecta diretórios
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 APP_DIR="$HOME/oci-manager-v4"
 VENV_DIR="$APP_DIR/venv"
 LAUNCHER="$APP_DIR/run_oci_manager.sh"
@@ -45,18 +45,32 @@ else
   exit 1
 fi
 
-# 5) Cria venv e instala dependências
+# 4) Cria venv e instala dependências
 if [[ ! -d "$VENV_DIR" ]]; then
+  echo "→ Criando ambiente virtual..."
   python3 -m venv "$VENV_DIR"
+  # Ajustar permissões do venv
+  chmod -R u+w "$VENV_DIR" 2>/dev/null || true
 fi
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
-python -m pip install --upgrade pip wheel
-# OCI SDK + Rich (UI)
-pip install "oci>=2.130.0" "rich>=13.0.0"
 
-# 6) Gera launcher
+# Verificar se o venv está funcionando
+if [[ "$VIRTUAL_ENV" != "$VENV_DIR" ]]; then
+  echo "⚠️  Problema com ambiente virtual. Recriando..."
+  rm -rf "$VENV_DIR"
+  python3 -m venv "$VENV_DIR"
+  chmod -R u+w "$VENV_DIR" 2>/dev/null || true
+  source "$VENV_DIR/bin/activate"
+fi
+
+echo "→ Atualizando pip e instalando dependências..."
+python -m pip install --upgrade pip wheel --user 2>/dev/null || python -m pip install --upgrade pip wheel
+# OCI SDK + Rich (UI)
+pip install "oci>=2.130.0" "rich>=13.0.0" --user 2>/dev/null || pip install "oci>=2.130.0" "rich>=13.0.0"
+
+# 5) Gera launcher
 cat > "$LAUNCHER" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -74,7 +88,7 @@ EOF
 chmod +x "$LAUNCHER"
 echo "✓ Gerado launcher: $LAUNCHER"
 
-# 7) Cria atalho no PATH (preferência: /usr/local/bin, fallback: ~/.local/bin)
+# 6) Cria atalho no PATH (preferência: /usr/local/bin, fallback: ~/.local/bin)
 TARGET_BIN="/usr/local/bin/oci-manager"
 if [[ -w "/usr/local/bin" ]]; then
   ln -sf "$LAUNCHER" "$TARGET_BIN"
@@ -88,7 +102,7 @@ else
   fi
 fi
 
-# 8) Checagem opcional do arquivo ~/.oci/config
+# 7) Checagem opcional do arquivo ~/.oci/config
 if [[ ! -f "$HOME/.oci/config" ]]; then
   echo "⚠️  Não encontrei ~/.oci/config. Crie/perfil( DEFAULT/INANNA/HERICKASF ) antes de usar."
 fi
