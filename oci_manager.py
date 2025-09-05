@@ -743,7 +743,7 @@ class OCIManager:
         input("\nPressione ENTER...")
     
     def delete_vcn_wizard(self):
-        """Wizard para deletar VCN com dependências"""
+        """Wizard para deletar VCN com dependências - VERSÃO CORRIGIDA"""
         console.print("\n🗑️ DELETAR VCN COM DEPENDÊNCIAS", style="bold red" if RICH_AVAILABLE else None)
         
         if not OCI_AVAILABLE or not self.clients:
@@ -788,7 +788,9 @@ class OCIManager:
                     console.print("\n🔄 Iniciando processo de deleção...", style="yellow" if RICH_AVAILABLE else None)
                     
                     try:
-                        # 1. Listar e alertar sobre instâncias
+                        import time
+                        
+                        # 1. Verificar instâncias
                         console.print("• Verificando instâncias...")
                         instances = self.clients['compute'].list_instances(
                             compartment_id=self.config['tenancy']
@@ -796,17 +798,21 @@ class OCIManager:
                         
                         instances_in_vcn = []
                         for instance in instances:
-                            vnics = self.clients['compute'].list_vnic_attachments(
-                                compartment_id=self.config['tenancy'],
-                                instance_id=instance.id
-                            ).data
-                            
-                            for vnic_att in vnics:
-                                vnic = self.clients['network'].get_vnic(vnic_att.vnic_id).data
-                                subnet = self.clients['network'].get_subnet(vnic.subnet_id).data
-                                if subnet.vcn_id == vcn.id:
-                                    instances_in_vcn.append(instance)
-                                    break
+                            try:
+                                vnics = self.clients['compute'].list_vnic_attachments(
+                                    compartment_id=self.config['tenancy'],
+                                    instance_id=instance.id
+                                ).data
+                                
+                                for vnic_att in vnics:
+                                    if vnic_att.lifecycle_state in ['ATTACHED', 'ATTACHING']:
+                                        vnic = self.clients['network'].get_vnic(vnic_att.vnic_id).data
+                                        subnet = self.clients['network'].get_subnet(vnic.subnet_id).data
+                                        if subnet.vcn_id == vcn.id:
+                                            instances_in_vcn.append(instance)
+                                            break
+                            except Exception as e:
+                                console.print(f"    ⚠️  Erro verificando instância {instance.display_name}: {e}")
                         
                         if instances_in_vcn:
                             console.print(f"  ⚠️  {len(instances_in_vcn)} instância(s) usando esta VCN!", 
@@ -820,7 +826,28 @@ class OCIManager:
                                 input("\nPressione ENTER...")
                                 return
                         
-                        # 2. Deletar Subnets
+                        # 2. PRIMEIRO: Limpar referências nas Route Tables
+                        console.print("• Limpando referências em Route Tables...")
+                        rts = self.clients['network'].list_route_tables(
+                            compartment_id=self.config['tenancy'],
+                            vcn_id=vcn.id
+                        ).data
+                        
+                        for rt in rts:
+                            if rt.route_rules:  # Se tem regras
+                                console.print(f"  Limpando regras da Route Table {rt.display_name}...")
+                                try:
+                                    # Limpar todas as regras primeiro
+                                    update_details = oci.core.models.UpdateRouteTableDetails(
+                                        route_rules=[]  # Lista vazia remove todas as regras
+                                    )
+                                    self.clients['network'].update_route_table(rt.id, update_details)
+                                    time.sleep(2)  # Aguardar propagação
+                                    
+                                except Exception as e:
+                                    console.print(f"    ⚠️  Erro limpando Route Table {rt.display_name}: {e}")
+                        
+                        # 3. Deletar Subnets
                         console.print("• Deletando subnets...")
                         subnets = self.clients['network'].list_subnets(
                             compartment_id=self.config['tenancy'],
@@ -831,10 +858,29 @@ class OCIManager:
                             console.print(f"  Deletando subnet {subnet.display_name}...")
                             try:
                                 self.clients['network'].delete_subnet(subnet.id)
+                                time.sleep(1)  # Aguardar
                             except Exception as e:
-                                console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
+                                console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 3. Deletar Internet Gateways
+                        # 4. Aguardar subnets serem deletadas
+                        console.print("• Aguardando deleção das subnets...")
+                        max_wait = 60  # 60 segundos máximo
+                        wait_time = 0
+                        
+                        while wait_time < max_wait:
+                            remaining_subnets = self.clients['network'].list_subnets(
+                                compartment_id=self.config['tenancy'],
+                                vcn_id=vcn.id
+                            ).data
+                            
+                            if not remaining_subnets:
+                                break
+                                
+                            time.sleep(2)
+                            wait_time += 2
+                            console.print(f"  Aguardando... ({len(remaining_subnets)} subnets restantes)")
+                        
+                        # 5. Deletar Internet Gateways
                         console.print("• Deletando Internet Gateways...")
                         igs = self.clients['network'].list_internet_gateways(
                             compartment_id=self.config['tenancy'],
@@ -845,10 +891,11 @@ class OCIManager:
                             console.print(f"  Deletando {ig.display_name}...")
                             try:
                                 self.clients['network'].delete_internet_gateway(ig.id)
+                                time.sleep(1)
                             except Exception as e:
-                                console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
+                                console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 4. Deletar NAT Gateways
+                        # 6. Deletar NAT Gateways
                         console.print("• Deletando NAT Gateways...")
                         nats = self.clients['network'].list_nat_gateways(
                             compartment_id=self.config['tenancy'],
@@ -859,24 +906,29 @@ class OCIManager:
                             console.print(f"  Deletando {nat.display_name}...")
                             try:
                                 self.clients['network'].delete_nat_gateway(nat.id)
+                                time.sleep(1)
                             except Exception as e:
-                                console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
+                                console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 5. Deletar Service Gateways
+                        # 7. Deletar Service Gateways
                         console.print("• Deletando Service Gateways...")
-                        sgs = self.clients['network'].list_service_gateways(
-                            compartment_id=self.config['tenancy'],
-                            vcn_id=vcn.id
-                        ).data
+                        try:
+                            sgs = self.clients['network'].list_service_gateways(
+                                compartment_id=self.config['tenancy'],
+                                vcn_id=vcn.id
+                            ).data
+                            
+                            for sg in sgs:
+                                console.print(f"  Deletando {sg.display_name}...")
+                                try:
+                                    self.clients['network'].delete_service_gateway(sg.id)
+                                    time.sleep(1)
+                                except Exception as e:
+                                    console.print(f"    ⚠️  Erro: {e}")
+                        except Exception as e:
+                            console.print(f"    ⚠️  Erro listando Service Gateways: {e}")
                         
-                        for sg in sgs:
-                            console.print(f"  Deletando {sg.display_name}...")
-                            try:
-                                self.clients['network'].delete_service_gateway(sg.id)
-                            except Exception as e:
-                                console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
-                        
-                        # 6. Deletar Route Tables customizadas
+                        # 8. Deletar Route Tables customizadas (agora sem regras)
                         console.print("• Deletando Route Tables...")
                         rts = self.clients['network'].list_route_tables(
                             compartment_id=self.config['tenancy'],
@@ -888,10 +940,11 @@ class OCIManager:
                                 console.print(f"  Deletando {rt.display_name}...")
                                 try:
                                     self.clients['network'].delete_route_table(rt.id)
+                                    time.sleep(1)
                                 except Exception as e:
-                                    console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
+                                    console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 7. Deletar Security Lists customizadas
+                        # 9. Deletar Security Lists customizadas
                         console.print("• Deletando Security Lists...")
                         sls = self.clients['network'].list_security_lists(
                             compartment_id=self.config['tenancy'],
@@ -903,10 +956,15 @@ class OCIManager:
                                 console.print(f"  Deletando {sl.display_name}...")
                                 try:
                                     self.clients['network'].delete_security_list(sl.id)
+                                    time.sleep(1)
                                 except Exception as e:
-                                    console.print(f"    ⚠️  Erro: {e}", style="yellow" if RICH_AVAILABLE else None)
+                                    console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 8. Finalmente deletar a VCN
+                        # 10. Aguardar todos os recursos serem deletados
+                        console.print("• Aguardando finalização das deleções...")
+                        time.sleep(10)
+                        
+                        # 11. Finalmente deletar a VCN
                         console.print(f"• Deletando VCN {vcn.display_name}...")
                         self.clients['network'].delete_vcn(vcn.id)
                         
@@ -915,6 +973,7 @@ class OCIManager:
                         
                     except Exception as e:
                         console.print(f"\n❌ Erro durante deleção: {e}", style="red" if RICH_AVAILABLE else None)
+                        console.print("\n💡 Dica: Alguns recursos podem ter dependências. Tente novamente ou delete manualmente via console OCI.")
                 else:
                     console.print("Operação cancelada", style="yellow" if RICH_AVAILABLE else None)
             
