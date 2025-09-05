@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import time
+import ipaddress
 from pathlib import Path
 from datetime import datetime, timedelta
 import subprocess
@@ -436,10 +437,20 @@ class OCIManager:
                 break
             elif choice == "1":
                 self.list_vcns()
+            elif choice == "2":
+                self.list_subnets()
+            elif choice == "3":
+                self.list_internet_gateways()
+            elif choice == "4":
+                self.list_nat_gateways()
+            elif choice == "5":
+                self.list_route_tables()
+            elif choice == "6":
+                self.manage_drg()
             elif choice == "7":
                 self.delete_vcn_wizard()
             else:
-                console.print("⚠️  Em desenvolvimento...", style="yellow" if RICH_AVAILABLE else None)
+                console.print("⚠️  Opção inválida", style="yellow" if RICH_AVAILABLE else None)
                 input("\nPressione ENTER...")
     
     def list_vcns(self):
@@ -471,6 +482,261 @@ class OCIManager:
             else:
                 console.print("Nenhuma VCN encontrada", style="yellow" if RICH_AVAILABLE else None)
                 
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+    
+    def list_subnets(self):
+        """Lista todas as subnets de todas as VCNs"""
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+            
+        try:
+            # Primeiro, listar todas as VCNs
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not vcns:
+                console.print("Nenhuma VCN encontrada", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+                
+            console.print("\n🌐 SUBNETS POR VCN:", style="bold cyan" if RICH_AVAILABLE else None)
+            
+            total_subnets = 0
+            for vcn in vcns:
+                subnets = self.clients['network'].list_subnets(
+                    compartment_id=self.config['tenancy'],
+                    vcn_id=vcn.id
+                ).data
+                
+                if subnets:
+                    console.print(f"\n📍 VCN: {vcn.display_name} ({vcn.cidr_block})")
+                    for i, subnet in enumerate(subnets, 1):
+                        # Tipo de subnet
+                        subnet_type = "🌍 Pública" if not subnet.prohibit_internet_ingress else "🔒 Privada"
+                        
+                        console.print(f"  {i}. {subnet.display_name}")
+                        console.print(f"     CIDR: {subnet.cidr_block}")
+                        console.print(f"     Tipo: {subnet_type}")
+                        console.print(f"     AD: {subnet.availability_domain or 'Regional'}")
+                        console.print(f"     Estado: {subnet.lifecycle_state}")
+                        
+                        # Contar IPs usados
+                        if hasattr(subnet, 'available_ip_address_count'):
+                            total_ips = sum(1 for _ in ipaddress.ip_network(subnet.cidr_block).hosts())
+                            used_ips = total_ips - subnet.available_ip_address_count
+                            console.print(f"     IPs: {used_ips}/{total_ips} utilizados")
+                        
+                        print()
+                    total_subnets += len(subnets)
+            
+            console.print(f"\n📊 Total: {total_subnets} subnet(s) encontrada(s)", 
+                         style="green" if RICH_AVAILABLE else None)
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def list_internet_gateways(self):
+        """Lista Internet Gateways"""
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+            
+        try:
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            console.print("\n🌍 INTERNET GATEWAYS:", style="bold cyan" if RICH_AVAILABLE else None)
+            
+            total_igs = 0
+            for vcn in vcns:
+                igs = self.clients['network'].list_internet_gateways(
+                    compartment_id=self.config['tenancy'],
+                    vcn_id=vcn.id
+                ).data
+                
+                if igs:
+                    console.print(f"\n📍 VCN: {vcn.display_name}")
+                    for i, ig in enumerate(igs, 1):
+                        status = "🟢 Habilitado" if ig.is_enabled else "🔴 Desabilitado"
+                        console.print(f"  {i}. {ig.display_name}")
+                        console.print(f"     Status: {status}")
+                        console.print(f"     Estado: {ig.lifecycle_state}")
+                        if hasattr(ig, 'route_table_id') and ig.route_table_id:
+                            rt = self.clients['network'].get_route_table(ig.route_table_id).data
+                            console.print(f"     Route Table: {rt.display_name}")
+                        print()
+                    total_igs += len(igs)
+            
+            if total_igs == 0:
+                console.print("Nenhum Internet Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                console.print(f"\n📊 Total: {total_igs} Internet Gateway(s)", 
+                             style="green" if RICH_AVAILABLE else None)
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def list_nat_gateways(self):
+        """Lista NAT Gateways"""
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+            
+        try:
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            console.print("\n🔀 NAT GATEWAYS:", style="bold cyan" if RICH_AVAILABLE else None)
+            
+            total_nats = 0
+            for vcn in vcns:
+                nats = self.clients['network'].list_nat_gateways(
+                    compartment_id=self.config['tenancy'],
+                    vcn_id=vcn.id
+                ).data
+                
+                if nats:
+                    console.print(f"\n📍 VCN: {vcn.display_name}")
+                    for i, nat in enumerate(nats, 1):
+                        block_traffic = "🚫 Bloqueado" if nat.block_traffic else "✅ Permitido"
+                        console.print(f"  {i}. {nat.display_name}")
+                        console.print(f"     IP Público: {nat.nat_ip}")
+                        console.print(f"     Tráfego: {block_traffic}")
+                        console.print(f"     Estado: {nat.lifecycle_state}")
+                        print()
+                    total_nats += len(nats)
+            
+            if total_nats == 0:
+                console.print("Nenhum NAT Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                console.print(f"\n📊 Total: {total_nats} NAT Gateway(s)", 
+                             style="green" if RICH_AVAILABLE else None)
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def list_route_tables(self):
+        """Lista Route Tables"""
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+            
+        try:
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            console.print("\n🗺️  ROUTE TABLES:", style="bold cyan" if RICH_AVAILABLE else None)
+            
+            total_rts = 0
+            for vcn in vcns:
+                rts = self.clients['network'].list_route_tables(
+                    compartment_id=self.config['tenancy'],
+                    vcn_id=vcn.id
+                ).data
+                
+                if rts:
+                    console.print(f"\n📍 VCN: {vcn.display_name}")
+                    for i, rt in enumerate(rts, 1):
+                        rt_type = "🔧 Default" if rt.display_name.startswith("Default") else "👤 Custom"
+                        console.print(f"  {i}. {rt.display_name}")
+                        console.print(f"     Tipo: {rt_type}")
+                        console.print(f"     Regras: {len(rt.route_rules)}")
+                        console.print(f"     Estado: {rt.lifecycle_state}")
+                        
+                        # Mostrar algumas regras principais
+                        if rt.route_rules:
+                            console.print("     📋 Regras principais:")
+                            for j, rule in enumerate(rt.route_rules[:3], 1):  # Primeiras 3 regras
+                                destination = rule.destination
+                                target_type = "Internet Gateway" if rule.network_entity_id and "internetgateway" in rule.network_entity_id else "Outros"
+                                console.print(f"        {j}. {destination} → {target_type}")
+                            
+                            if len(rt.route_rules) > 3:
+                                console.print(f"        ... e mais {len(rt.route_rules) - 3} regra(s)")
+                        print()
+                    total_rts += len(rts)
+            
+            if total_rts == 0:
+                console.print("Nenhuma Route Table encontrada", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                console.print(f"\n📊 Total: {total_rts} Route Table(s)", 
+                             style="green" if RICH_AVAILABLE else None)
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def manage_drg(self):
+        """Gerenciar Dynamic Routing Gateways (DRG)"""
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+            
+        try:
+            console.print("\n🔀 DYNAMIC ROUTING GATEWAYS (DRG):", style="bold cyan" if RICH_AVAILABLE else None)
+            
+            drgs = self.clients['network'].list_drgs(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if drgs:
+                console.print(f"\n📡 {len(drgs)} DRG(s) encontrado(s):")
+                
+                for i, drg in enumerate(drgs, 1):
+                    console.print(f"\n{i}. {drg.display_name}")
+                    console.print(f"   Estado: {drg.lifecycle_state}")
+                    
+                    # Listar attachments da DRG
+                    try:
+                        attachments = self.clients['network'].list_drg_attachments(
+                            compartment_id=self.config['tenancy'],
+                            drg_id=drg.id
+                        ).data
+                        
+                        console.print(f"   Attachments: {len(attachments)}")
+                        
+                        for att in attachments:
+                            att_type = "VCN" if att.vcn_id else "Virtual Circuit" if hasattr(att, 'virtual_circuit_id') else "Outros"
+                            console.print(f"     • {att.display_name} ({att_type}) - {att.lifecycle_state}")
+                            
+                    except Exception as e:
+                        console.print(f"     ⚠️  Erro ao listar attachments: {e}", style="yellow" if RICH_AVAILABLE else None)
+                    
+                    # Verificar route tables da DRG
+                    try:
+                        drg_route_tables = self.clients['network'].list_drg_route_tables(
+                            drg_id=drg.id
+                        ).data
+                        
+                        console.print(f"   Route Tables: {len(drg_route_tables)}")
+                        
+                    except Exception as e:
+                        console.print(f"     ⚠️  Erro ao listar route tables: {e}", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                console.print("Nenhum DRG encontrado", style="yellow" if RICH_AVAILABLE else None)
+                console.print("\n💡 DRGs são usados para conectar VCNs entre si ou com redes on-premises")
+                console.print("   através de FastConnect ou VPN.")
+                    
         except Exception as e:
             console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
         
