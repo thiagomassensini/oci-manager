@@ -421,13 +421,46 @@ class OCIManager:
             console.print("\n🌐 GERENCIAMENTO AVANÇADO DE REDE", style="bold cyan" if RICH_AVAILABLE else None)
             
             print("""
+📋 LISTAR RECURSOS:
 1. Listar VCNs
 2. Listar Subnets
 3. Internet Gateways
 4. NAT Gateways
 5. Route Tables
-6. DRG Management
-7. 🗑️  Deletar VCN (com todas as dependências)
+6. Network Security Groups (NSGs)
+7. Service Gateways
+
+🔧 GERENCIAR VCNs:
+8. ✏️  Editar VCN (nome, tags, CIDR)
+9. 🆕 Criar VCN
+10. 🗑️  Deletar VCN (com dependências)
+
+🌐 GATEWAYS:
+11. 🆕 Criar Internet Gateway
+12. 🗑️  Deletar Internet Gateway
+13. 🆕 Criar NAT Gateway
+14. 🗑️  Deletar NAT Gateway
+15. 🗑️  Deletar Service Gateway
+
+🛣️  ROUTE TABLES:
+16. ✏️  Editar Route Table
+17. 🆕 Criar Route Table
+18. 🗑️  Deletar Route Table
+
+🛡️  SECURITY:
+19. ✏️  Editar Security List
+20. 🆕 Criar Network Security Group
+21. ✏️  Editar NSG Rules
+
+🏗️  SUBNETS:
+22. 🆕 Criar Subnet
+23. ✏️  Editar Subnet
+24. 🗑️  Deletar Subnet
+
+🔗 DRG & CONECTIVIDADE:
+25. DRG Management
+26. VPN/IPSec Management
+
 0. Voltar
             """)
             
@@ -446,9 +479,47 @@ class OCIManager:
             elif choice == "5":
                 self.list_route_tables()
             elif choice == "6":
-                self.manage_drg()
+                self.list_network_security_groups()
             elif choice == "7":
+                self.list_service_gateways()
+            elif choice == "8":
+                self.edit_vcn_wizard()
+            elif choice == "9":
+                self.create_vcn_wizard()
+            elif choice == "10":
                 self.delete_vcn_wizard()
+            elif choice == "11":
+                self.create_internet_gateway_wizard()
+            elif choice == "12":
+                self.delete_internet_gateway_wizard()
+            elif choice == "13":
+                self.create_nat_gateway_wizard()
+            elif choice == "14":
+                self.delete_nat_gateway_wizard()
+            elif choice == "15":
+                self.delete_service_gateway_wizard()
+            elif choice == "16":
+                self.edit_route_table_wizard()
+            elif choice == "17":
+                self.create_route_table_wizard()
+            elif choice == "18":
+                self.delete_route_table_wizard()
+            elif choice == "19":
+                self.edit_security_list_wizard()
+            elif choice == "20":
+                self.create_nsg_wizard()
+            elif choice == "21":
+                self.edit_nsg_rules_wizard()
+            elif choice == "22":
+                self.create_subnet_wizard()
+            elif choice == "23":
+                self.edit_subnet_wizard()
+            elif choice == "24":
+                self.delete_subnet_wizard()
+            elif choice == "25":
+                self.manage_drg()
+            elif choice == "26":
+                self.manage_ipsec()
             else:
                 console.print("⚠️  Opção inválida", style="yellow" if RICH_AVAILABLE else None)
                 input("\nPressione ENTER...")
@@ -683,6 +754,505 @@ class OCIManager:
         except Exception as e:
             console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
         
+        input("\nPressione ENTER...")
+
+    def list_network_security_groups(self):
+        """Lista Network Security Groups"""
+        console.print("\n🛡️ NETWORK SECURITY GROUPS", style="bold cyan" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            nsgs = self.clients['network'].list_network_security_groups(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not nsgs:
+                console.print("Nenhum NSG encontrado", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                for nsg in nsgs:
+                    console.print(f"\n📋 {nsg.display_name}")
+                    console.print(f"   ID: {nsg.id}")
+                    console.print(f"   VCN: {nsg.vcn_id}")
+                    console.print(f"   Estado: {nsg.lifecycle_state}")
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def list_service_gateways(self):
+        """Lista Service Gateways"""
+        console.print("\n🔗 SERVICE GATEWAYS", style="bold cyan" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            sgs = self.clients['network'].list_service_gateways(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not sgs:
+                console.print("Nenhum Service Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+            else:
+                for sg in sgs:
+                    console.print(f"\n🔗 {sg.display_name}")
+                    console.print(f"   ID: {sg.id}")
+                    console.print(f"   VCN: {sg.vcn_id}")
+                    console.print(f"   Estado: {sg.lifecycle_state}")
+                    
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def edit_vcn_wizard(self):
+        """Wizard para editar VCN"""
+        console.print("\n✏️ EDITAR VCN", style="bold yellow" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not vcns:
+                console.print("Nenhuma VCN encontrada", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # Listar VCNs
+            console.print("\n📋 VCNs disponíveis:")
+            for i, vcn in enumerate(vcns, 1):
+                console.print(f"{i}. {vcn.display_name} ({vcn.cidr_block})")
+            
+            vcn_num = int(input("\nNúmero da VCN para editar (0 para cancelar): ")) - 1
+            
+            if vcn_num < 0:
+                return
+                
+            if 0 <= vcn_num < len(vcns):
+                vcn = vcns[vcn_num]
+                
+                console.print(f"\n📝 Editando VCN: {vcn.display_name}")
+                console.print(f"CIDR atual: {vcn.cidr_block}")
+                
+                print("\nO que deseja editar?")
+                print("1. Nome da VCN")
+                print("2. DNS Label")
+                print("3. Adicionar Tags")
+                print("0. Cancelar")
+                
+                edit_choice = input("\nEscolha: ")
+                
+                if edit_choice == "1":
+                    new_name = input(f"Novo nome (atual: {vcn.display_name}): ").strip()
+                    if new_name:
+                        try:
+                            update_details = oci.core.models.UpdateVcnDetails(
+                                display_name=new_name
+                            )
+                            self.clients['network'].update_vcn(vcn.id, update_details)
+                            console.print(f"✅ Nome da VCN atualizado para '{new_name}'", 
+                                        style="green" if RICH_AVAILABLE else None)
+                        except Exception as e:
+                            console.print(f"❌ Erro ao atualizar: {e}", style="red" if RICH_AVAILABLE else None)
+                
+                elif edit_choice == "2":
+                    new_dns = input(f"Novo DNS Label (atual: {getattr(vcn, 'dns_label', 'N/A')}): ").strip()
+                    if new_dns:
+                        try:
+                            update_details = oci.core.models.UpdateVcnDetails(
+                                dns_label=new_dns
+                            )
+                            self.clients['network'].update_vcn(vcn.id, update_details)
+                            console.print(f"✅ DNS Label atualizado para '{new_dns}'", 
+                                        style="green" if RICH_AVAILABLE else None)
+                        except Exception as e:
+                            console.print(f"❌ Erro ao atualizar: {e}", style="red" if RICH_AVAILABLE else None)
+                
+                elif edit_choice == "3":
+                    console.print("💡 Funcionalidade de tags será implementada em breve")
+                
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def create_vcn_wizard(self):
+        """Wizard para criar VCN"""
+        console.print("\n🆕 CRIAR VCN", style="bold green" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            console.print("📝 Configuração da nova VCN:")
+            
+            # Nome da VCN
+            vcn_name = input("Nome da VCN: ").strip()
+            if not vcn_name:
+                console.print("❌ Nome é obrigatório", style="red" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # CIDR Block
+            cidr_block = input("CIDR Block (ex: 10.0.0.0/16): ").strip()
+            if not cidr_block:
+                console.print("❌ CIDR Block é obrigatório", style="red" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # DNS Label
+            dns_label = input("DNS Label (opcional): ").strip()
+            
+            # Confirmar criação
+            console.print(f"\n📋 Resumo:")
+            console.print(f"Nome: {vcn_name}")
+            console.print(f"CIDR: {cidr_block}")
+            console.print(f"DNS Label: {dns_label or 'N/A'}")
+            
+            confirm = input("\n✅ Criar VCN? (s/n): ")
+            
+            if confirm.lower() == 's':
+                create_details = oci.core.models.CreateVcnDetails(
+                    compartment_id=self.config['tenancy'],
+                    display_name=vcn_name,
+                    cidr_block=cidr_block
+                )
+                
+                if dns_label:
+                    create_details.dns_label = dns_label
+                
+                result = self.clients['network'].create_vcn(create_details)
+                console.print(f"✅ VCN '{vcn_name}' criada com sucesso!", 
+                            style="green bold" if RICH_AVAILABLE else None)
+                console.print(f"ID: {result.data.id}")
+            
+        except Exception as e:
+            console.print(f"❌ Erro ao criar VCN: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def delete_internet_gateway_wizard(self):
+        """Wizard para deletar Internet Gateway"""
+        console.print("\n🗑️ DELETAR INTERNET GATEWAY", style="bold red" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            igs = self.clients['network'].list_internet_gateways(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not igs:
+                console.print("Nenhum Internet Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # Listar IGs
+            console.print("\n📋 Internet Gateways disponíveis:")
+            for i, ig in enumerate(igs, 1):
+                console.print(f"{i}. {ig.display_name} ({ig.lifecycle_state})")
+            
+            ig_num = int(input("\nNúmero do IG para deletar (0 para cancelar): ")) - 1
+            
+            if ig_num < 0:
+                return
+                
+            if 0 <= ig_num < len(igs):
+                ig = igs[ig_num]
+                
+                console.print(f"\n⚠️  ATENÇÃO: Deletar '{ig.display_name}'?", style="yellow" if RICH_AVAILABLE else None)
+                console.print("Isso pode afetar conectividade de instâncias!")
+                
+                confirm = input("\nTem certeza? Digite 'DELETAR' para confirmar: ")
+                
+                if confirm == "DELETAR":
+                    self.clients['network'].delete_internet_gateway(ig.id)
+                    console.print(f"✅ Internet Gateway '{ig.display_name}' deletado!", 
+                                style="green" if RICH_AVAILABLE else None)
+                else:
+                    console.print("Operação cancelada", style="yellow" if RICH_AVAILABLE else None)
+            
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def delete_nat_gateway_wizard(self):
+        """Wizard para deletar NAT Gateway"""
+        console.print("\n🗑️ DELETAR NAT GATEWAY", style="bold red" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            nats = self.clients['network'].list_nat_gateways(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not nats:
+                console.print("Nenhum NAT Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # Listar NATs
+            console.print("\n📋 NAT Gateways disponíveis:")
+            for i, nat in enumerate(nats, 1):
+                console.print(f"{i}. {nat.display_name} ({nat.lifecycle_state})")
+            
+            nat_num = int(input("\nNúmero do NAT para deletar (0 para cancelar): ")) - 1
+            
+            if nat_num < 0:
+                return
+                
+            if 0 <= nat_num < len(nats):
+                nat = nats[nat_num]
+                
+                console.print(f"\n⚠️  ATENÇÃO: Deletar '{nat.display_name}'?", style="yellow" if RICH_AVAILABLE else None)
+                
+                confirm = input("\nTem certeza? Digite 'DELETAR' para confirmar: ")
+                
+                if confirm == "DELETAR":
+                    self.clients['network'].delete_nat_gateway(nat.id)
+                    console.print(f"✅ NAT Gateway '{nat.display_name}' deletado!", 
+                                style="green" if RICH_AVAILABLE else None)
+                else:
+                    console.print("Operação cancelada", style="yellow" if RICH_AVAILABLE else None)
+            
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def create_internet_gateway_wizard(self):
+        """Wizard para criar Internet Gateway"""
+        console.print("\n🆕 CRIAR INTERNET GATEWAY", style="bold green" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            # Listar VCNs
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not vcns:
+                console.print("Nenhuma VCN encontrada", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            console.print("\n📋 VCNs disponíveis:")
+            for i, vcn in enumerate(vcns, 1):
+                console.print(f"{i}. {vcn.display_name} ({vcn.cidr_block})")
+            
+            vcn_num = int(input("\nEscolha a VCN (0 para cancelar): ")) - 1
+            
+            if vcn_num < 0:
+                return
+                
+            if 0 <= vcn_num < len(vcns):
+                vcn = vcns[vcn_num]
+                
+                # Nome do Gateway
+                ig_name = input("Nome do Internet Gateway: ").strip()
+                if not ig_name:
+                    console.print("❌ Nome é obrigatório", style="red" if RICH_AVAILABLE else None)
+                    input("\nPressione ENTER...")
+                    return
+                
+                # Confirmar criação
+                console.print(f"\n📋 Resumo:")
+                console.print(f"Nome: {ig_name}")
+                console.print(f"VCN: {vcn.display_name}")
+                
+                confirm = input("\n✅ Criar Internet Gateway? (s/n): ")
+                
+                if confirm.lower() == 's':
+                    create_details = oci.core.models.CreateInternetGatewayDetails(
+                        compartment_id=self.config['tenancy'],
+                        vcn_id=vcn.id,
+                        display_name=ig_name,
+                        is_enabled=True
+                    )
+                    
+                    result = self.clients['network'].create_internet_gateway(create_details)
+                    console.print(f"✅ Internet Gateway '{ig_name}' criado com sucesso!", 
+                                style="green bold" if RICH_AVAILABLE else None)
+                    console.print(f"ID: {result.data.id}")
+            
+        except Exception as e:
+            console.print(f"❌ Erro ao criar Internet Gateway: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def create_nat_gateway_wizard(self):
+        """Wizard para criar NAT Gateway"""
+        console.print("\n🆕 CRIAR NAT GATEWAY", style="bold green" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            # Listar VCNs
+            vcns = self.clients['network'].list_vcns(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not vcns:
+                console.print("Nenhuma VCN encontrada", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            console.print("\n📋 VCNs disponíveis:")
+            for i, vcn in enumerate(vcns, 1):
+                console.print(f"{i}. {vcn.display_name} ({vcn.cidr_block})")
+            
+            vcn_num = int(input("\nEscolha a VCN (0 para cancelar): ")) - 1
+            
+            if vcn_num < 0:
+                return
+                
+            if 0 <= vcn_num < len(vcns):
+                vcn = vcns[vcn_num]
+                
+                # Nome do Gateway
+                nat_name = input("Nome do NAT Gateway: ").strip()
+                if not nat_name:
+                    console.print("❌ Nome é obrigatório", style="red" if RICH_AVAILABLE else None)
+                    input("\nPressione ENTER...")
+                    return
+                
+                # Confirmar criação
+                console.print(f"\n📋 Resumo:")
+                console.print(f"Nome: {nat_name}")
+                console.print(f"VCN: {vcn.display_name}")
+                
+                confirm = input("\n✅ Criar NAT Gateway? (s/n): ")
+                
+                if confirm.lower() == 's':
+                    create_details = oci.core.models.CreateNatGatewayDetails(
+                        compartment_id=self.config['tenancy'],
+                        vcn_id=vcn.id,
+                        display_name=nat_name
+                    )
+                    
+                    result = self.clients['network'].create_nat_gateway(create_details)
+                    console.print(f"✅ NAT Gateway '{nat_name}' criado com sucesso!", 
+                                style="green bold" if RICH_AVAILABLE else None)
+                    console.print(f"ID: {result.data.id}")
+            
+        except Exception as e:
+            console.print(f"❌ Erro ao criar NAT Gateway: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    def delete_service_gateway_wizard(self):
+        """Wizard para deletar Service Gateway"""
+        console.print("\n🗑️ DELETAR SERVICE GATEWAY", style="bold red" if RICH_AVAILABLE else None)
+        
+        if not OCI_AVAILABLE or not self.clients:
+            console.print("⚠️  OCI SDK não disponível", style="yellow" if RICH_AVAILABLE else None)
+            input("\nPressione ENTER...")
+            return
+        
+        try:
+            sgs = self.clients['network'].list_service_gateways(
+                compartment_id=self.config['tenancy']
+            ).data
+            
+            if not sgs:
+                console.print("Nenhum Service Gateway encontrado", style="yellow" if RICH_AVAILABLE else None)
+                input("\nPressione ENTER...")
+                return
+            
+            # Listar Service Gateways
+            console.print("\n📋 Service Gateways disponíveis:")
+            for i, sg in enumerate(sgs, 1):
+                console.print(f"{i}. {sg.display_name} ({sg.lifecycle_state})")
+            
+            sg_num = int(input("\nNúmero do Service Gateway para deletar (0 para cancelar): ")) - 1
+            
+            if sg_num < 0:
+                return
+                
+            if 0 <= sg_num < len(sgs):
+                sg = sgs[sg_num]
+                
+                console.print(f"\n⚠️  ATENÇÃO: Deletar '{sg.display_name}'?", style="yellow" if RICH_AVAILABLE else None)
+                
+                confirm = input("\nTem certeza? Digite 'DELETAR' para confirmar: ")
+                
+                if confirm == "DELETAR":
+                    self.clients['network'].delete_service_gateway(sg.id)
+                    console.print(f"✅ Service Gateway '{sg.display_name}' deletado!", 
+                                style="green" if RICH_AVAILABLE else None)
+                else:
+                    console.print("Operação cancelada", style="yellow" if RICH_AVAILABLE else None)
+            
+        except Exception as e:
+            console.print(f"❌ Erro: {e}", style="red" if RICH_AVAILABLE else None)
+        
+        input("\nPressione ENTER...")
+
+    # Placeholders para funções adicionais que serão implementadas
+    def edit_route_table_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def create_route_table_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def delete_route_table_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def edit_security_list_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def create_nsg_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def edit_nsg_rules_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def create_subnet_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def edit_subnet_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
+        input("\nPressione ENTER...")
+
+    def delete_subnet_wizard(self):
+        console.print("🚧 Funcionalidade em desenvolvimento", style="yellow" if RICH_AVAILABLE else None)
         input("\nPressione ENTER...")
 
     def manage_drg(self):
