@@ -778,6 +778,7 @@ class OCIManager:
                 console.print(f"• VCN: {vcn.display_name}")
                 console.print("• Todas as Subnets")
                 console.print("• Todos os Gateways (Internet, NAT, Service)")
+                console.print("• Todos os Network Security Groups (NSGs)")
                 console.print("• Todas as Route Tables customizadas")
                 console.print("• Todas as Security Lists customizadas")
                 console.print("• ⚠️  Instâncias usando esta VCN podem ficar inacessíveis!")
@@ -928,7 +929,25 @@ class OCIManager:
                         except Exception as e:
                             console.print(f"    ⚠️  Erro listando Service Gateways: {e}")
                         
-                        # 8. Deletar Route Tables customizadas (agora sem regras)
+                        # 8. Deletar Network Security Groups (NSGs)
+                        console.print("• Deletando Network Security Groups...")
+                        try:
+                            nsgs = self.clients['network'].list_network_security_groups(
+                                compartment_id=self.config['tenancy'],
+                                vcn_id=vcn.id
+                            ).data
+                            
+                            for nsg in nsgs:
+                                console.print(f"  Deletando NSG {nsg.display_name}...")
+                                try:
+                                    self.clients['network'].delete_network_security_group(nsg.id)
+                                    time.sleep(1)
+                                except Exception as e:
+                                    console.print(f"    ⚠️  Erro: {e}")
+                        except Exception as e:
+                            console.print(f"    ⚠️  Erro listando NSGs: {e}")
+                        
+                        # 9. Deletar Route Tables customizadas (agora sem regras)
                         console.print("• Deletando Route Tables...")
                         rts = self.clients['network'].list_route_tables(
                             compartment_id=self.config['tenancy'],
@@ -944,7 +963,7 @@ class OCIManager:
                                 except Exception as e:
                                     console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 9. Deletar Security Lists customizadas
+                        # 10. Deletar Security Lists customizadas
                         console.print("• Deletando Security Lists...")
                         sls = self.clients['network'].list_security_lists(
                             compartment_id=self.config['tenancy'],
@@ -960,11 +979,11 @@ class OCIManager:
                                 except Exception as e:
                                     console.print(f"    ⚠️  Erro: {e}")
                         
-                        # 10. Aguardar todos os recursos serem deletados
+                        # 11. Aguardar todos os recursos serem deletados
                         console.print("• Aguardando finalização das deleções...")
                         time.sleep(10)
                         
-                        # 11. Finalmente deletar a VCN
+                        # 12. Finalmente deletar a VCN
                         console.print(f"• Deletando VCN {vcn.display_name}...")
                         self.clients['network'].delete_vcn(vcn.id)
                         
