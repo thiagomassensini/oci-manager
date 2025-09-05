@@ -1,113 +1,117 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-### ───────────────────────────────────────────────────────────
-###  OCI Manager v4.0 — setup.sh
-###  - Cria venv e instala deps (oci, rich)
-###  - Copia o oci_manager.py para ~/oci-manager-v4
-###  - Gera run_oci_manager.sh
-###  - Cria atalho "oci-manager" no PATH
-### ───────────────────────────────────────────────────────────
+# OCI Manager v4.0 - Script de Instalação Unificado
+# Instala automaticamente o OCI Manager com todas as dependências
+# Resolve todos os problemas de permissão e compatibilidade
 
-# 1) Detecta diretórios
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-APP_DIR="$HOME/oci-manager-v4"
-VENV_DIR="$APP_DIR/venv"
-LAUNCHER="$APP_DIR/run_oci_manager.sh"
+set -e  # Para execução em caso de erro
 
-echo "→ Instalando OCI Manager v4.0 em: $APP_DIR"
+INSTALL_DIR="$HOME/oci-manager-v4"
+VENV_DIR="$INSTALL_DIR/venv"
 
-# 2) Garante Python3 e venv
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "⚠️  python3 não encontrado. Tentando instalar..."
-  if command -v apt >/dev/null 2>&1; then
-    sudo apt update -y && sudo apt install -y python3 python3-venv python3-pip
-  elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y python3 python3-pip python3-virtualenv || true
-  elif command -v yum >/dev/null 2>&1; then
-    sudo yum install -y python3 python3-pip python3-virtualenv || true
-  else
-    echo "❌ Não consegui instalar Python automaticamente. Instale python3/venv e rode novamente."
+echo "→ OCI Manager v4.0 - Instalação Unificada"
+echo "→ Instalando em: $INSTALL_DIR"
+
+# Função para limpeza segura de instalação anterior
+safe_cleanup() {
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "→ Removendo instalação anterior..."
+        # Primeira tentativa: remoção normal
+        rm -rf "$INSTALL_DIR" 2>/dev/null || {
+            echo "→ Problemas de permissão detectados, corrigindo..."
+            # Tentar com chmod recursivo
+            chmod -R 755 "$INSTALL_DIR" 2>/dev/null || true
+            find "$INSTALL_DIR" -type f -exec chmod 644 {} \; 2>/dev/null || true
+            rm -rf "$INSTALL_DIR" 2>/dev/null || {
+                # Última tentativa com sudo se disponível
+                if command -v sudo >/dev/null 2>&1; then
+                    echo "→ Usando sudo para limpeza..."
+                    sudo rm -rf "$INSTALL_DIR" 2>/dev/null || true
+                fi
+                # Se ainda existir, avisa mas continua
+                if [ -d "$INSTALL_DIR" ]; then
+                    echo "⚠️  Aviso: Instalação anterior não removida completamente"
+                    echo "   Continuando instalação..."
+                fi
+            }
+        }
+    fi
+}
+
+# Limpeza segura
+safe_cleanup
+
+# Criar diretório de instalação
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+# Download do arquivo principal
+echo "→ Baixando oci_manager.py..."
+curl -sSL https://raw.githubusercontent.com/thiagomassensini/oci-manager/main/oci_manager.py -o oci_manager.py
+echo "✓ Copiado: oci_manager.py"
+
+# Criar ambiente virtual
+echo "→ Criando ambiente virtual..."
+python3 -m venv venv
+
+# Ativar ambiente virtual
+source venv/bin/activate
+
+# Atualizar pip e ferramentas essenciais
+echo "→ Atualizando pip e ferramentas..."
+pip install --upgrade pip wheel setuptools
+
+# Instalar dependências
+echo "→ Instalando dependências OCI..."
+pip install oci
+
+echo "→ Instalando Rich para interface..."
+pip install rich
+
+# Teste de instalação
+echo "→ Testando instalação..."
+python3 -c "import oci; import rich; print('✓ Dependências OK')" || {
+    echo "❌ Erro na instalação das dependências"
     exit 1
-  fi
-fi
+}
 
-# 3) Prepara estrutura
-mkdir -p "$APP_DIR/reports"
-
-# 4) Copia o último oci_manager.py (o seu v4.0)
-if [[ -f "$SCRIPT_DIR/oci_manager.py" ]]; then
-  cp -f "$SCRIPT_DIR/oci_manager.py" "$APP_DIR/oci_manager.py"
-  echo "✓ Copiado: $SCRIPT_DIR/oci_manager.py → $APP_DIR/oci_manager.py"
-else
-  echo "⚠️  oci_manager.py não encontrado ao lado do setup.sh."
-  echo "    Coloque o seu oci_manager.py v4.0 no mesmo diretório do setup.sh e rode de novo."
-  exit 1
-fi
-
-# 4) Cria venv e instala dependências
-if [[ ! -d "$VENV_DIR" ]]; then
-  echo "→ Criando ambiente virtual..."
-  python3 -m venv "$VENV_DIR"
-  # Ajustar permissões do venv
-  chmod -R u+w "$VENV_DIR" 2>/dev/null || true
-fi
-
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
-
-# Verificar se o venv está funcionando
-if [[ "$VIRTUAL_ENV" != "$VENV_DIR" ]]; then
-  echo "⚠️  Problema com ambiente virtual. Recriando..."
-  rm -rf "$VENV_DIR"
-  python3 -m venv "$VENV_DIR"
-  chmod -R u+w "$VENV_DIR" 2>/dev/null || true
-  source "$VENV_DIR/bin/activate"
-fi
-
-echo "→ Atualizando pip e instalando dependências..."
-python -m pip install --upgrade pip wheel --user 2>/dev/null || python -m pip install --upgrade pip wheel
-# OCI SDK + Rich (UI)
-pip install "oci>=2.130.0" "rich>=13.0.0" --user 2>/dev/null || pip install "oci>=2.130.0" "rich>=13.0.0"
-
-# 5) Gera launcher
-cat > "$LAUNCHER" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Ativa venv do app
-if [[ -d "$SCRIPT_DIR/venv" ]]; then
-  # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/venv/bin/activate"
-fi
-
-# Executa
-exec python3 "$SCRIPT_DIR/oci_manager.py" "$@"
+# Criar script de execução robusto
+cat > run.sh << 'EOF'
+#!/bin/bash
+# Script de execução do OCI Manager
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+cd "$SCRIPT_DIR"
+source venv/bin/activate
+python3 oci_manager.py "$@"
 EOF
-chmod +x "$LAUNCHER"
-echo "✓ Gerado launcher: $LAUNCHER"
 
-# 6) Cria atalho no PATH (preferência: /usr/local/bin, fallback: ~/.local/bin)
-TARGET_BIN="/usr/local/bin/oci-manager"
-if [[ -w "/usr/local/bin" ]]; then
-  ln -sf "$LAUNCHER" "$TARGET_BIN"
-  echo "✓ Atalho criado: $TARGET_BIN"
-else
-  mkdir -p "$HOME/.local/bin"
-  ln -sf "$LAUNCHER" "$HOME/.local/bin/oci-manager"
-  echo "✓ Atalho criado: $HOME/.local/bin/oci-manager"
-  if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    echo '⚠️  Adicione ao PATH (bash/zsh): export PATH="$HOME/.local/bin:$PATH"'
-  fi
+chmod +x run.sh
+
+# Criar alias nos shells
+ALIAS_LINE="alias oci-manager='$INSTALL_DIR/run.sh'"
+
+# Bashrc
+if [ -f ~/.bashrc ]; then
+    if ! grep -q "oci-manager" ~/.bashrc 2>/dev/null; then
+        echo "$ALIAS_LINE" >> ~/.bashrc
+        echo "✓ Alias adicionado ao ~/.bashrc"
+    fi
 fi
 
-# 7) Checagem opcional do arquivo ~/.oci/config
-if [[ ! -f "$HOME/.oci/config" ]]; then
-  echo "⚠️  Não encontrei ~/.oci/config. Crie/perfil( DEFAULT/INANNA/HERICKASF ) antes de usar."
+# Zshrc
+if [ -f ~/.zshrc ]; then
+    if ! grep -q "oci-manager" ~/.zshrc 2>/dev/null; then
+        echo "$ALIAS_LINE" >> ~/.zshrc
+        echo "✓ Alias adicionado ao ~/.zshrc"
+    fi
 fi
 
-echo
-echo "✅ OCI Manager v4.0 instalado."
-echo "→ Rode:  oci-manager"
-echo "   ou:   $LAUNCHER"
+echo ""
+echo "🎉 OCI Manager v4.0 instalado com sucesso!"
+echo ""
+echo "Para usar:"
+echo "  1. Execute: source ~/.bashrc (ou ~/.zshrc)"
+echo "  2. Depois: oci-manager"
+echo "  3. Ou diretamente: $INSTALL_DIR/run.sh"
+echo ""
+echo "Primeira execução: configure seus perfis OCI com 'oci setup config'"
